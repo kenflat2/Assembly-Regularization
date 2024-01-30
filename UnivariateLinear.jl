@@ -42,6 +42,6 @@ function reciprocal(a::Scalar)
     end
 end;
 
-building_blocks = Vector{Union{Expr,Symbol}}([:(Scalar(0.0)), :(Scalar(1.0)), :x]);
+building_blocks = Vector{Expr}([:(Scalar(0.0)), :(Scalar(1.0)), quote x end]);
 building_block_types = Vector{Type}([Scalar, Scalar, Vec]);
 operations = Vector([add, multiply, reciprocal])

@@ -1,7 +1,7 @@
 include("UnivariateLinear.jl")
 
 struct AssemblyPath
-    path::Vector{Union{Expr, Symbol}}
+    path::Vector{Expr}
     types::Vector{Type}
 end
 
@@ -22,10 +22,14 @@ end;
 # Returns: new assembly path with expression added
 function create_assembly_path(a::AssemblyPath, expr::Expr)
     new_type = typeof(eval(expr))
-    new_path = push!(a.path, expr)
-    new_type_list = push!(a.types, new_type)
+    new_path = push!(copy(a.path), expr)
+    new_type_list = push!(copy(a.types), new_type)
     return AssemblyPath(new_path, new_type_list)
 end;
+
+
+#=
+Can be deleted
 
 # Retrieves all methods from the set of Assembly operations. functions
 # may have abstract type arguments while methods implementations
@@ -40,37 +44,40 @@ function get_methods()
     end
     return return_m
 end;
+=#
 
 # Given an assembly path, construct all models what can be assembled
 # from it.
 #   ap - input assembly path
 # returns - Vector of assembly paths of length one greater than the input
-function generate_descendents(ap::AssemblyPath)
+function generate_descendants(ap::AssemblyPath)
     assembly_paths = Vector{AssemblyPath}()
     # list all models (both building blocks and those in assembly path)
     # which can be recombined to make new models
-    blocks = push!(building_blocks, ap.path)
-    block_types = push!(building_block_types, ap.types)
+    blocks = append!(building_blocks, ap.path)
+    block_types = append!(building_block_types, ap.types)
 
     # for each method, find all combinations of previous models which are
     # valid inputs to it and construct a new assembly path for each
-    for method in get_methods()
-        for args in arguments_that_match_type_signature(method, blocks, block_types)
-            new_assembly_path = create_assembly_path(ap, :(method(args...)))
-            push!(assembly_paths, new_assembly_path)
+    for operation in operations
+        for method in methods(operation)
+            for args in arguments_that_match_type_signature(method, blocks, block_types)
+                new_assembly_path = create_assembly_path(ap, :($operation($(args...))))
+                push!(assembly_paths, new_assembly_path)
+            end
         end
     end
 
     return assembly_paths
-end
+end;
 
+# This is working as intended
 function arguments_that_match_type_signature(method, blocks, block_types)
     # vector of input types to method 
     method_arg_types = get_method_argument_types(method)
-
     # for each type, find the models in building blocks and in the
     # assembly path which match that type
-    arg_list = Tuple([models_of_type(type, blocks, block_types ) 
+    arg_list = Tuple([models_of_type(type, blocks, block_types) 
                for type in method_arg_types])
 
     # now iterate over the list of each argument in turn
@@ -82,6 +89,7 @@ end;
 #   type - specific type to return
 #   blocks - the vector of other models
 #   block_types - the return type of each model
+# Return - a vector of models
 function models_of_type(type, blocks, block_types)
     return blocks[map((x) -> x == type, block_types)]
 end;
@@ -89,6 +97,6 @@ end;
 # Very ugly function that returns the vector of arguments for a 
 # method. Don't be surprised if this breaks in a new version of Julia.
 function get_method_argument_types(m::Method)
-    signature_vector = [x for x in get_methods()[1].sig.parameters]
+    signature_vector = [x for x in m.sig.parameters]
     return Vector{Type}(signature_vector[2:length(signature_vector)])
 end;
