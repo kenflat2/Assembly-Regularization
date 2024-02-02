@@ -1,3 +1,5 @@
+using Statistics
+using Random
 include("UnivariateLinear.jl")
 
 struct AssemblyPath
@@ -54,8 +56,8 @@ function generate_descendants(ap::AssemblyPath)
     assembly_paths = Vector{AssemblyPath}()
     # list all models (both building blocks and those in assembly path)
     # which can be recombined to make new models
-    blocks = append!(building_blocks, ap.path)
-    block_types = append!(building_block_types, ap.types)
+    blocks = append!(copy(building_blocks), ap.path)
+    block_types = append!(copy(building_block_types), ap.types)
 
     # for each method, find all combinations of previous models which are
     # valid inputs to it and construct a new assembly path for each
@@ -68,8 +70,24 @@ function generate_descendants(ap::AssemblyPath)
         end
     end
 
-    return assembly_paths
+    return unique(assembly_paths)
 end;
+
+# nice little helper function, credit to 
+# https://stackoverflow.com/questions/50899973/indices-of-unique-elements-of-vector-in-julia
+function unique_indices(x::Vector)
+    return unique(i -> x[i], 1:length(x))
+end
+
+# Generate new population given the old population
+function generate_next_generation(P::Vector{AssemblyPath})
+    P_new = AssemblyPath[]
+    for ap in P
+        append!(P_new, generate_descendants(ap))
+    end
+
+    return P_new
+end
 
 # This is working as intended
 function arguments_that_match_type_signature(method, blocks, block_types)
@@ -99,4 +117,61 @@ end;
 function get_method_argument_types(m::Method)
     signature_vector = [x for x in m.sig.parameters]
     return Vector{Type}(signature_vector[2:length(signature_vector)])
+end;
+
+# Given a model, some input and output data, compute the MSE
+#   a - input assembly path for a model
+#   x - inputs to model
+#   y - targets
+function compute_MSE(a::AssemblyPath, y::Vec)
+    m = get_model(a)
+
+    # that is the nicest piece of code in the universe look at that
+    # shit mmmmmmmmmmmmmmmmm
+    y_hat = eval(m) # the expression is evaluated in the global context
+    
+    return Statistics.mean((y_hat isa Scalar ? y.vec.-y_hat.val : y.vec-y_hat.vec).^2)
+end;
+
+function get_model(a::AssemblyPath)
+    return last(a.path)
+end
+
+# from a population of models of models with identical assembly index a
+# find the best performing one.
+#   P - population of assembly paths to evaluate, must have identical assembly index
+#   X - n × 1 design matrix, since this is univariate regression
+#   y - n × 1 target matrix
+#   λ - regularization penalty, must be positive
+#   a - current assembly index
+function find_best_model(P::Vector{AssemblyPath}, y::Vec, λ::Real, a::Unsigned)
+    MSEs = [compute_MSE(ap, y) for ap in P]
+    min_index = argmin(MSEs)
+    MSEmin = MSEs[min_index]
+    best_model = get_model(P[min_index])
+
+    return (best_model, MSEmin + λ*a)
+end;
+
+# Assembles the minimal assembly index model for a given dataset
+#   X - design matrix
+#   y - target matrix
+#   λ - regularization penalty
+function assemble(y::Vec, λ::Real)
+    P = init_assembly_paths()
+    a = Unsigned(0)
+    (best_model, Lmin) = find_best_model(P, y, λ, a)
+
+    while Lmin >= λ * a
+        P = generate_next_generation(P)
+        a += 1
+        (local_best_model, local_Lmin) = find_best_model(P, y, λ, a)
+        if local_Lmin < Lmin
+            best_model = local_best_model
+            Lmin = local_Lmin
+        end
+        println(a)
+    end
+
+    return best_model
 end;

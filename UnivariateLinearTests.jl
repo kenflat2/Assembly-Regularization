@@ -1,5 +1,8 @@
 using Test
 include("AssemblySpace.jl")
+include("DataStructures.jl")
+
+global x::Vec
 
 @test add(Scalar(1),Scalar(4)) == Scalar(5.0)
 @test add(Vec(Vector{Float64}([2.6])), Vec(Vector{Float64}([1.4]))).vec == Vector{Float64}([4.0])
@@ -52,3 +55,50 @@ true_argument_matrix1 = Matrix{Tuple{Expr, Expr}}([[(:(Scalar(0.0)), :(Scalar(0.
 argument_matrix2 = collect(arguments_that_match_type_signature(methods(add)[2], building_blocks, building_block_types))
 true_argument_matrix2 = Matrix{Tuple{Expr, Expr}}([[(:(Scalar(0.0)), :(Scalar(0.0))), (:(Scalar(1.0)), :(Scalar(0.0)))] [(:(Scalar(0.0)), :(Scalar(1.0))), (:(Scalar(1.0)), :(Scalar(1.0)))]])
 @test (argument_matrix1 == true_argument_matrix1) || (argument_matrix2 == true_argument_matrix2)
+
+x = Vec([0.5, 1.0])
+@test compute_MSE(AssemblyPath([:(Scalar(0.0))],[Scalar]), Vec([1.0, -1.0])) == 1.0
+x = Vec([1.0, 2.0, 3.0])
+@test compute_MSE(AssemblyPath([:($(building_blocks[3]))],[Vec]), Vec([-1.0, 4.0, 1.0])) == 4.0
+x = Vec([1.0, 2.0, 3.0])
+@test compute_MSE(AssemblyPath([:(multiply(Scalar(2.0), $(building_blocks[3])))],[Vec]), Vec([2.0, 4.0, 6.0])) == 0.0
+
+ap1 = AssemblyPath(Expr[:(Scalar(0.0))], Type[Scalar]) # model that outputs 1
+ap2 = AssemblyPath(Expr[:(Scalar(1.0))], Type[Scalar]) # model that outputs 2
+P = [ap1, ap2]
+λ = 1.0
+X = Vec([0.1, 0.6, -8.0])
+Y = Vec([1.0, 1.0, 1.0]) # clearly, the model which outputs 1 should be chosen
+@test find_best_model(P, Y, λ, Unsigned(0)) == (:(Scalar(1.0)), 0.0)
+
+ap1 = AssemblyPath(Expr[building_blocks[3]], Type[Vec]) # model that outputs 1
+ap2 = AssemblyPath(Expr[:(Scalar(1.0))], Type[Scalar]) # model that outputs 2
+P = [ap1, ap2]
+λ = 1.0
+X = Vec([1.0, 2.0, 3.0])
+Y = Vec([1.0, 2.0, 3.0]) # clearly, the model which outputs 1 should be chosen
+@test find_best_model(P, Y, λ, Unsigned(0)) == (building_blocks[3], 0.0)
+
+ap1 = AssemblyPath(Expr[:(Scalar(1.0)), :(add(Scalar(1.0), Scalar(1.0)))], Type[Scalar, Scalar])
+ap2 = AssemblyPath(Expr[:(Scalar(1.0)), :(add(Scalar(1.0), Scalar(0.0)))], Type[Scalar, Scalar])
+P = [ap1, ap2]
+λ = 1.0
+X = Vec([0.1, 0.6, -8.0])
+Y = Vec([1.0, 3.0, 1.0]) # clearly, the model which outputs 1 should be chosen
+@test find_best_model(P, Y, λ, Unsigned(1)) == (:(add(Scalar(1.0), Scalar(1.0))), 2.0)
+
+x = Vec([-1.0, 0.0, 1.0])
+y = Vec([-2.0, 0.0, 1.0])
+λ = 0.1
+# assemble(y, λ)
+
+island = FixedSizePriorityQueue{String, Real}(3)
+enqueue!(island, "d", 4.0)
+@test peek(island.pq).first == "d" && peek(island.pq).second == 4.0
+enqueue!(island, "e", 5.0)
+@test peek(island.pq).first == "e" && peek(island.pq).second == 5.0
+enqueue!(island, "c", 3.0)
+@test peek(island.pq).first == "e" && peek(island.pq).second == 5.0
+enqueue!(island, "b", 2.0)
+enqueue!(island, "a", 1.0)
+@test peek(island.pq).first == "c" && peek(island.pq).second == 3.0
