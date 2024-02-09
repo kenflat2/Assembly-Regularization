@@ -3,6 +3,7 @@ include("AssemblySpace.jl")
 include("DataStructures.jl")
 
 global x::Vec
+global y::Vec
 
 @test add(Scalar(1),Scalar(4)) == Scalar(5.0)
 @test add(Vec(Vector{Float64}([2.6])), Vec(Vector{Float64}([1.4]))).vec == Vector{Float64}([4.0])
@@ -57,40 +58,44 @@ true_argument_matrix2 = Matrix{Tuple{Expr, Expr}}([[(:(Scalar(0.0)), :(Scalar(0.
 @test (argument_matrix1 == true_argument_matrix1) || (argument_matrix2 == true_argument_matrix2)
 
 x = Vec([0.5, 1.0])
-@test compute_MSE(AssemblyPath([:(Scalar(0.0))],[Scalar]), Vec([1.0, -1.0])) == 1.0
+y = Vec([1.0, -1.0])
+@test compute_MSE(AssemblyPath([:(Scalar(0.0))],[Scalar])) == 1.0
 x = Vec([1.0, 2.0, 3.0])
-@test compute_MSE(AssemblyPath([:($(building_blocks[3]))],[Vec]), Vec([-1.0, 4.0, 1.0])) == 4.0
+y = Vec([-1.0, 4.0, 1.0])
+@test compute_MSE(AssemblyPath([:($(building_blocks[3]))],[Vec])) == 4.0
 x = Vec([1.0, 2.0, 3.0])
-@test compute_MSE(AssemblyPath([:(multiply(Scalar(2.0), $(building_blocks[3])))],[Vec]), Vec([2.0, 4.0, 6.0])) == 0.0
+y = Vec([2.0, 4.0, 6.0])
+@test compute_MSE(AssemblyPath([:(multiply(Scalar(2.0), $(building_blocks[3])))],[Vec])) == 0.0
 
+x = Vec([0.1, 0.6, -8.0])
+y = Vec([1.0, 1.0, 1.0]) # clearly, the model which outputs 1 should be chosen
 ap1 = AssemblyPath(Expr[:(Scalar(0.0))], Type[Scalar]) # model that outputs 1
 ap2 = AssemblyPath(Expr[:(Scalar(1.0))], Type[Scalar]) # model that outputs 2
-P = [ap1, ap2]
+P = Population(10)
+add_to_population(ap1, P)
+add_to_population(ap2, P)
 λ = 1.0
-X = Vec([0.1, 0.6, -8.0])
-Y = Vec([1.0, 1.0, 1.0]) # clearly, the model which outputs 1 should be chosen
-@test find_best_model(P, Y, λ, Unsigned(0)) == (:(Scalar(1.0)), 0.0)
+@test find_best_model(P, λ, Unsigned(0)) == (:(Scalar(1.0)), 0.0)
 
+x = Vec([1.0, 2.0, 3.0])
+y = Vec([1.0, 2.0, 3.0]) # clearly, the model which outputs 1 should be chosen
 ap1 = AssemblyPath(Expr[building_blocks[3]], Type[Vec]) # model that outputs 1
 ap2 = AssemblyPath(Expr[:(Scalar(1.0))], Type[Scalar]) # model that outputs 2
-P = [ap1, ap2]
+P = Population(10)
+add_to_population(ap1, P)
+add_to_population(ap2, P)
 λ = 1.0
-X = Vec([1.0, 2.0, 3.0])
-Y = Vec([1.0, 2.0, 3.0]) # clearly, the model which outputs 1 should be chosen
-@test find_best_model(P, Y, λ, Unsigned(0)) == (building_blocks[3], 0.0)
+@test find_best_model(P, λ, Unsigned(0)) == (building_blocks[3], 0.0)
 
+x = Vec([0.1, 0.6, -8.0])
+y = Vec([1.0, 3.0, 1.0]) # clearly, the model which outputs 1 should be chosen
 ap1 = AssemblyPath(Expr[:(Scalar(1.0)), :(add(Scalar(1.0), Scalar(1.0)))], Type[Scalar, Scalar])
 ap2 = AssemblyPath(Expr[:(Scalar(1.0)), :(add(Scalar(1.0), Scalar(0.0)))], Type[Scalar, Scalar])
-P = [ap1, ap2]
+P = Population(3)
+add_to_population(ap1, P)
+add_to_population(ap2, P)
 λ = 1.0
-X = Vec([0.1, 0.6, -8.0])
-Y = Vec([1.0, 3.0, 1.0]) # clearly, the model which outputs 1 should be chosen
-@test find_best_model(P, Y, λ, Unsigned(1)) == (:(add(Scalar(1.0), Scalar(1.0))), 2.0)
-
-x = Vec([-1.0, 0.0, 1.0])
-y = Vec([-2.0, 0.0, 1.0])
-λ = 0.1
-# assemble(y, λ)
+@test find_best_model(P, λ, Unsigned(1)) == (:(add(Scalar(1.0), Scalar(1.0))), 2.0)
 
 island = FixedSizePriorityQueue{String, Real}(3)
 enqueue!(island, "d", 4.0)

@@ -1,20 +1,28 @@
 using Statistics
 using Random
 include("UnivariateLinear.jl")
+include("DataStructures.jl")
 
 struct AssemblyPath
     path::Vector{Expr}
     types::Vector{Type}
 end
 
+const Population = FixedSizePriorityQueue{AssemblyPath, Real}
+
 # Forms the initial population of assembly index 0 models, which are
 # simply the building block expression
 # Returns - a vector of AssemblyPath objects each initialized with one
 #           building block expression
-function init_assembly_paths()
-    return [AssemblyPath([block], [type]) 
-        for (block, type) in zip(building_blocks, building_block_types)
-        ]
+function init_population(k::Int)
+    P = Population(k)
+
+    for (block, type) in zip(building_blocks, building_block_types)
+        new_ap = AssemblyPath([block], [type])
+        add_to_population(new_ap, P)
+    end
+
+    return P
 end;
 
 # Create a new assembly path using new expression, assuming it has
@@ -52,8 +60,7 @@ end;
 # from it.
 #   ap - input assembly path
 # returns - Vector of assembly paths of length one greater than the input
-function generate_descendants(ap::AssemblyPath)
-    assembly_paths = Vector{AssemblyPath}()
+function generate_descendants(ap::AssemblyPath, P::Population)
     # list all models (both building blocks and those in assembly path)
     # which can be recombined to make new models
     blocks = append!(copy(building_blocks), ap.path)
@@ -65,13 +72,16 @@ function generate_descendants(ap::AssemblyPath)
         for method in methods(operation)
             for args in arguments_that_match_type_signature(method, blocks, block_types)
                 new_assembly_path = create_assembly_path(ap, :($operation($(args...))))
-                push!(assembly_paths, new_assembly_path)
+                add_to_population(new_assembly_path, P)
             end
         end
     end
-
-    return unique(assembly_paths)
 end;
+
+function add_to_population(ap::AssemblyPath, P::Population)
+    MSE = compute_MSE(ap)
+    enqueue!(P, ap, MSE)
+end
 
 # nice little helper function, credit to 
 # https://stackoverflow.com/questions/50899973/indices-of-unique-elements-of-vector-in-julia
@@ -80,10 +90,11 @@ function unique_indices(x::Vector)
 end
 
 # Generate new population given the old population
-function generate_next_generation(P::Vector{AssemblyPath})
-    P_new = AssemblyPath[]
-    for ap in P
-        append!(P_new, generate_descendants(ap))
+function generate_next_generation(P::Population, k::Int)
+    P_new = Population(k)
+
+    for ap in keys(P.pq)
+        generate_descendants(ap, P_new)
     end
 
     return P_new
@@ -123,7 +134,7 @@ end;
 #   a - input assembly path for a model
 #   x - inputs to model
 #   y - targets
-function compute_MSE(a::AssemblyPath, y::Vec)
+function compute_MSE(a::AssemblyPath)
     m = get_model(a)
 
     # that is the nicest piece of code in the universe look at that
@@ -144,28 +155,27 @@ end
 #   y - n × 1 target matrix
 #   λ - regularization penalty, must be positive
 #   a - current assembly index
-function find_best_model(P::Vector{AssemblyPath}, y::Vec, λ::Real, a::Unsigned)
-    MSEs = [compute_MSE(ap, y) for ap in P]
-    min_index = argmin(MSEs)
-    MSEmin = MSEs[min_index]
-    best_model = get_model(P[min_index])
-
+function find_best_model(P::Population, λ::Real, a::Unsigned)
+    best_assembly_path = argmin(P.pq)
+    MSEmin = P.pq[best_assembly_path]
+    best_model = get_model(best_assembly_path)
     return (best_model, MSEmin + λ*a)
 end;
 
-# Assembles the minimal assembly index model for a given dataset
-#   X - design matrix
-#   y - target matrix
+# Assembles the minimal assembly index model for a given dataset. You 
+# must set the design matrix x and target matrix y in a global context
+# outside of the call. This enables the models to be Julia expresssions.
 #   λ - regularization penalty
-function assemble(y::Vec, λ::Real)
-    P = init_assembly_paths()
+#   k - carrying capacity
+function assemble(λ::Real, k::Int)
+    P = init_population(k)
     a = Unsigned(0)
-    (best_model, Lmin) = find_best_model(P, y, λ, a)
+    (best_model, Lmin) = find_best_model(P,  λ, a)
 
     while Lmin >= λ * a
-        P = generate_next_generation(P)
+        P = generate_next_generation(P, k)
         a += 1
-        (local_best_model, local_Lmin) = find_best_model(P, y, λ, a)
+        (local_best_model, local_Lmin) = find_best_model(P, λ, a)
         if local_Lmin < Lmin
             best_model = local_best_model
             Lmin = local_Lmin
