@@ -1,6 +1,5 @@
 using Statistics
 using Random
-include("UnivariateLinear.jl")
 include("DataStructures.jl")
 
 struct AssemblyPath
@@ -68,9 +67,9 @@ function generate_descendants(ap::AssemblyPath, P::Population)
 
     # for each method, find all combinations of previous models which are
     # valid inputs to it and construct a new assembly path for each
-    for operation in operations
-        for method in methods(operation)
-            for args in arguments_that_match_type_signature(method, blocks, block_types)
+    for (operation, op_signatures) in zip(operations, operation_input_types)
+        for op_signature in op_signatures
+            for args in arguments_that_match_type_signature(op_signature, blocks, block_types)
                 new_assembly_path = create_assembly_path(ap, :($operation($(args...))))
                 add_to_population(new_assembly_path, P)
             end
@@ -79,7 +78,8 @@ function generate_descendants(ap::AssemblyPath, P::Population)
 end;
 
 function add_to_population(ap::AssemblyPath, P::Population)
-    MSE = compute_MSE(ap)
+    m = get_model(ap)
+    MSE = compute_MSE(m)
     enqueue!(P, ap, MSE)
 end
 
@@ -101,13 +101,11 @@ function generate_next_generation(P::Population, k::Int)
 end
 
 # This is working as intended
-function arguments_that_match_type_signature(method, blocks, block_types)
-    # vector of input types to method 
-    method_arg_types = get_method_argument_types(method)
+function arguments_that_match_type_signature(op_signature, blocks, block_types)
     # for each type, find the models in building blocks and in the
     # assembly path which match that type
     arg_list = Tuple([models_of_type(type, blocks, block_types) 
-               for type in method_arg_types])
+               for type in op_signature])
 
     # now iterate over the list of each argument in turn
     return Iterators.product(arg_list...)
@@ -123,26 +121,14 @@ function models_of_type(type, blocks, block_types)
     return blocks[map((x) -> x == type, block_types)]
 end;
 
+#=
 # Very ugly function that returns the vector of arguments for a 
 # method. Don't be surprised if this breaks in a new version of Julia.
 function get_method_argument_types(m::Method)
     signature_vector = [x for x in m.sig.parameters]
     return Vector{Type}(signature_vector[2:length(signature_vector)])
 end;
-
-# Given a model, some input and output data, compute the MSE
-#   a - input assembly path for a model
-#   x - inputs to model
-#   y - targets
-function compute_MSE(a::AssemblyPath)
-    m = get_model(a)
-
-    # that is the nicest piece of code in the universe look at that
-    # shit mmmmmmmmmmmmmmmmm
-    y_hat = eval(m) # the expression is evaluated in the global context
-    
-    return Statistics.mean((y_hat isa Scalar ? y.vec.-y_hat.val : y.vec-y_hat.vec).^2)
-end;
+=#
 
 function get_model(a::AssemblyPath)
     return last(a.path)
@@ -168,17 +154,18 @@ end;
 #   λ - regularization penalty
 #   k - carrying capacity
 function assemble(λ::Real, k::Int)
-    P = init_population(k)
+    @time P = init_population(k)
     a = Unsigned(0)
-    (best_model, Lmin) = find_best_model(P,  λ, a)
+    @time (best_model, Lmin) = find_best_model(P,  λ, a)
 
     while Lmin >= λ * a
-        P = generate_next_generation(P, k)
+        @time P = generate_next_generation(P, k)
         a += 1
-        (local_best_model, local_Lmin) = find_best_model(P, λ, a)
+        @time (local_best_model, local_Lmin) = find_best_model(P, λ, a)
         if local_Lmin < Lmin
             best_model = local_best_model
             Lmin = local_Lmin
+            print(local_best_model)
         end
         println(a)
     end
