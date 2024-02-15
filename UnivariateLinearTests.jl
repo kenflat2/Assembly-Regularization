@@ -63,13 +63,13 @@ true_argument_matrix2 = Matrix{Tuple{Expr, Expr}}([[(:(Scalar(0.0)), :(Scalar(0.
 
 x = Vec([0.5, 1.0])
 y = Vec([1.0, -1.0])
-@test compute_MSE(AssemblyPath([:(Scalar(0.0))],[Scalar])) == 1.0
+@test compute_MSE(get_model(AssemblyPath([:(Scalar(0.0))],[Scalar]))) == 1.0
 x = Vec([1.0, 2.0, 3.0])
 y = Vec([-1.0, 4.0, 1.0])
-@test compute_MSE(AssemblyPath([:($(building_blocks[3]))],[Vec])) == 4.0
+@test compute_MSE(get_model(AssemblyPath([:($(building_blocks[3]))],[Vec]))) == 4.0
 x = Vec([1.0, 2.0, 3.0])
 y = Vec([2.0, 4.0, 6.0])
-@test compute_MSE(AssemblyPath([:(multiply(Scalar(2.0), $(building_blocks[3])))],[Vec])) == 0.0
+@test compute_MSE(get_model(AssemblyPath([:(multiply(Scalar(2.0), $(building_blocks[3])))],[Vec]))) == 0.0
 
 x = Vec([0.1, 0.6, -8.0])
 y = Vec([1.0, 1.0, 1.0]) # clearly, the model which outputs 1 should be chosen

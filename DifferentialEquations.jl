@@ -38,3 +38,5 @@ u3 = hcat(sol.u...)[3,:]
 # plot(sol, vars=(1, 2, 3), xlabel="x", ylabel="y", zlabel="z", legend=false)
 
 (dx1, dx2, dx3) = lorenz63(u1, u2, u3)
+
+plot(u2, u3, dx2)
