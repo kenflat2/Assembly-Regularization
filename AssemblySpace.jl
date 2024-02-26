@@ -1,16 +1,11 @@
 using Statistics
 using Random
+using Plots
 include("DataStructures.jl")
 
-struct AssemblyNode
-    model::Expr
-    type::Type
-    assembly_index::Int
-    parent::Union{AssemblyNode, Nothing}
-end
-
 # const Population = FixedSizePriorityQueue{AssemblyPath, Real}
-const Population = PriorityQueue{AssemblyNode, Real}
+const Population = Set{Term}
+const BirthQueue = PriorityQueue{Term, Real}
 
 # Forms the initial population of assembly index 0 models, which are
 # simply the building block expression
@@ -18,56 +13,109 @@ const Population = PriorityQueue{AssemblyNode, Real}
 #           building block expression
 function init_population()
     global P
-    P = Population(Base.Order.Reverse)
+    global Q
+    global P_types
+
+    P = Set{Term}()
+    Q = BirthQueue(Base.Order.Reverse)
+    P_types = Dict{Term, Type}()
 
     for (block, type) in zip(building_blocks, building_block_types)
-        mi = compute_MI_nonlinear(block)
-        new_an = AssemblyNode(block, type, 0, nothing)
-        enqueue!(P, new_an, mi)
+        mi = 1000
+        enqueue!(Q, block, mi)
     end
-
-    return P
 end;
 
 # The ultimate function
 function assemble(λ::Real)
-    @time P = init_population()
+    @time init_population()
 
     minimal_model = building_blocks[1]
     minimal_loss = Inf
 
-    while !isempty(P)
-        node = dequeue!(P)
-        parent_MI = peek(P).second
-        loss = compute_loss(node, λ)
+    while !isempty(Q)
+        # pop a model off the queue and assess its MSE
+        model = dequeue!(Q)
+
+        print_poly(model)
+
+        loss = compute_loss(model, λ)
+        # print(model, "j\n")
         if loss < minimal_loss
             minimal_loss = loss
-            minimal_model = node.model
-            print("Best Model\n")
-            print(minimal_model, "j\n")
+            minimal_model = model
+            print("Best Model: ")
+            print_poly(model)
+            println("")
         end
 
-        # if the regularization penalty for each child is greater than the minimum 
-        # loss so far, then don't add them to the population
-        if minimal_loss < λ * (node.assembly_index + 1)
+        if minimal_loss < 2845
+            return minimal_model
+        end
+
+        # if this new model has a probitively large assembly, then don't add it to the population
+        if minimal_loss < λ * compute_assembly_index(model)
             continue
         end
 
-        descendants = generate_descendants(node)
-        for child_model in descendants
-            child_model_type = typeof(eval(child_model))
-            new_assembly_node = AssemblyNode(child_model, child_model_type, node.assembly_index + 1, node)
-            child_MI = compute_MI_nonlinear(child_model)
-            if child_MI > parent_MI
-                enqueue!(P, new_assembly_node, child_MI)
-            end
-        end
+        # then push to the population set so it is never recomputed
+        add_to_population(model)
+
+        # then add descendants to the queue, sorting them by their mutual information
+        add_descendants_to_queue(λ, minimal_loss)
     end
 
     return minimal_model
 end
 
-function get_ancestors(node::AssemblyNode, blocks::Vector{Expr}, block_types::Vector{Type})
+# add a model to the population of models so it is never recomputed
+function add_to_population(model::Term)
+    push!(P, model)
+    P_types[model] = typeof(eval(model))
+end
+
+function add_descendants_to_queue(λ::Real, minimal_loss::Real)
+    descendants = generate_descendants()
+
+    for child_model in descendants
+        # ensure child hasn't been checked
+        reg_penalty = λ * compute_assembly_index(child_model)
+        if !(child_model in P) && !(child_model in keys(Q)) && (reg_penalty < minimal_loss)
+            child_MI = compute_MI(child_model)
+            enqueue!(Q, child_model, child_MI)
+        end
+    end
+end
+
+# Computes the assembly index of a generic Julia expression, assuming the set of building blocks.
+# The assembly index is equal to the number of unique models in the assembly path which are not 
+# building blocks. For instance
+#  a -> a + b -> (a + b)^2
+# The arguments to the ultimate expression are both (a + b), 
+function compute_assembly_index(model::Term)
+    set_of_models = Set{Term}()
+    set_of_models_in_path(model, set_of_models)
+
+    # return the number of non-building block models in the assembly path
+    return length(set_of_models)
+end
+
+# Helper function to compute the assembly index
+function set_of_models_in_path(model::Term, set_of_models::Set{Term})
+    # if the expression is a building block, skip
+    if !(model in building_blocks)
+        # the expression is an intermediate model in the assembly path, so add it to the set.
+        push!(set_of_models, model)
+
+        # repeat for each input argument expression.
+        for arg in model.args[2:length(model.args)]
+            set_of_models_in_path(arg, set_of_models)
+        end
+    end
+end
+
+#=
+function get_ancestors(model::Term, blocks::Vector{Term}, block_types::Vector{Type})
     if node.parent === nothing
         append!(blocks, building_blocks)
         append!(block_types, building_block_types)
@@ -77,21 +125,19 @@ function get_ancestors(node::AssemblyNode, blocks::Vector{Expr}, block_types::Ve
         get_ancestors(node.parent, blocks, block_types)
     end
 end
+=#
 
-function generate_descendants(node::AssemblyNode)
-    # list all models (both building blocks and those in assembly path)
-    # which can be recombined to make new models
-    blocks = Expr[]
-    block_types = Type[]
-    get_ancestors(node, blocks, block_types)
-    descendants = Expr[]
+function generate_descendants()
+    # the population is all models which can be recombined
+    descendants = Term[]
     
     # for each method, find all combinations of previous models which are
     # valid inputs to it and construct a new assembly path for each
     for (operation, op_signatures) in zip(operations, operation_input_types)
         for op_signature in op_signatures
-            for args in arguments_that_match_type_signature(op_signature, blocks, block_types)
-                push!(descendants, :($operation($(args...))))
+            for args in arguments_that_match_type_signature(op_signature)
+                descendant = create_descendant(operation, args)
+                push!(descendants, descendant)
             end
         end
     end
@@ -99,19 +145,35 @@ function generate_descendants(node::AssemblyNode)
     return descendants
 end;
 
+# create a descendant depending on the operation and arguments passed in
+function create_descendant(operation, args)
+    if operation == Base.Broadcast.BroadcastFunction(+)
+        in1 = eval(args[1])
+        in2 = eval(args[2])
+
+        # do linear regression manually because its only two variables who needs libraries.
+        coef =  1/ (dot(in1, in1) + dot(in2, in2))
+        a = coef * dot(in1, y)
+        b = coef * dot(in2, y)
+
+        return :($a .* arg[1] .+ $b .* arg[2])
+    end
+    return :($operation($(args...)))
+end
+
 # This is working as intended
-function arguments_that_match_type_signature(op_signature, blocks, block_types)
+function arguments_that_match_type_signature(op_signature)
     # for each type, find the models in building blocks and in the
     # assembly path which match that type
-    arg_list = Tuple([models_of_type(type, blocks, block_types) 
-               for type in op_signature])
+    arg_list = Tuple([models_of_type(type) for type in op_signature])
 
     # now iterate over the list of each argument in turn
     return Iterators.product(arg_list...)
 end;
 
-function compute_loss(node::AssemblyNode, λ::Real)
-    return compute_MSE(node.model) + λ * node.assembly_index
+function compute_loss(model::Term, λ::Real)
+    assembly_index = compute_assembly_index(model)
+    return compute_MSE(model) + λ * assembly_index
 end;
 
 # Finds all models of a specific type given a vector of models and a 
@@ -120,9 +182,32 @@ end;
 #   blocks - the vector of other models
 #   block_types - the return type of each model
 # Return - a vector of models
-function models_of_type(type, blocks, block_types)
-    return blocks[map((x) -> x == type, block_types)]
+function models_of_type(type)
+    return filter((m) -> P_types[m] == type, P)
 end;
+
+# Print expression
+function print_expression(expr::Term, func_mappings::Dict=Dict(), var_mappings::Dict=Dict())
+    if typeof(expr) == Symbol
+        
+        var_name = get(var_mappings, expr, expr)
+
+        print(var_name)
+
+    elseif expr.head == :call
+        # Check if the function has a custom mapping
+        func_name = get(func_mappings, expr.args[1], expr.args[1])
+
+        # Print the function name
+        print("(")
+
+        print_expression(expr.args[2], func_mappings, var_mappings)
+        print("$func_name")
+        print_expression(expr.args[3], func_mappings, var_mappings)
+
+        print(")")
+    end
+end
 
 #=
 # Create a new assembly path using new expression, assuming it has
@@ -130,7 +215,7 @@ end;
 #   a - assembly path that we wish to augment with a new expression
 #   expr - the new expression to augment it with
 # Returns: new assembly path with expression added
-function create_assembly_path(a::AssemblyPath, expr::Expr)
+function create_assembly_path(a::AssemblyPath, expr::Term)
     new_type = typeof(eval(expr))
     new_path = push!(copy(a.path), expr)
     new_type_list = push!(copy(a.types), new_type)
