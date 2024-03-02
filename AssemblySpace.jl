@@ -1,6 +1,7 @@
 using Statistics
 using Random
 using Plots
+using Dates
 include("DataStructures.jl")
 
 # const Population = FixedSizePriorityQueue{AssemblyPath, Real}
@@ -33,7 +34,10 @@ function assemble(λ::Real)
     minimal_model = building_blocks[1]
     minimal_loss = Inf
 
-    while !isempty(Q)
+    duration_seconds = 30
+    start_time = now()
+
+    while !isempty(Q) && now() - start_time < Millisecond(1000 * duration_seconds)
         # pop a model off the queue and assess its MSE
         model = dequeue!(Q)
 
@@ -47,10 +51,6 @@ function assemble(λ::Real)
             print("Best Model: ")
             print_poly(model)
             println("")
-        end
-
-        if minimal_loss < 2845
-            return minimal_model
         end
 
         # if this new model has a probitively large assembly, then don't add it to the population
@@ -108,10 +108,20 @@ function set_of_models_in_path(model::Term, set_of_models::Set{Term})
         push!(set_of_models, model)
 
         # repeat for each input argument expression.
-        for arg in model.args[2:length(model.args)]
-            set_of_models_in_path(arg, set_of_models)
+        for arg in find_args(model)
+            if typeof(arg) != Float64
+                set_of_models_in_path(arg, set_of_models)
+            end
         end
     end
+end
+
+function find_args(model::Term)
+    if model.args[1] == :.+
+        return [model.args[2].args[3], model.args[3].args[3]]
+    end
+
+    return model.args[2:end]
 end
 
 #=
@@ -147,16 +157,19 @@ end;
 
 # create a descendant depending on the operation and arguments passed in
 function create_descendant(operation, args)
-    if operation == Base.Broadcast.BroadcastFunction(+)
+    if operation == (operations[1])
         in1 = eval(args[1])
         in2 = eval(args[2])
 
-        # do linear regression manually because its only two variables who needs libraries.
-        coef =  1/ (dot(in1, in1) + dot(in2, in2))
-        a = coef * dot(in1, y)
-        b = coef * dot(in2, y)
+        X = hcat(in1, in2)
 
-        return :($a .* arg[1] .+ $b .* arg[2])
+        (a, b) = y' * X * pinv(X' * X)
+        # do linear regression manually because its only two variables who needs libraries.
+        
+        a = round(a, digits=2)
+        b = round(b, digits=2)
+
+        return :(($a .* $(args[1])) .+ ($b .* $(args[2])))
     end
     return :($operation($(args...)))
 end
@@ -187,8 +200,10 @@ function models_of_type(type)
 end;
 
 # Print expression
-function print_expression(expr::Term, func_mappings::Dict=Dict(), var_mappings::Dict=Dict())
-    if typeof(expr) == Symbol
+function print_expression(expr, func_mappings::Dict=Dict(), var_mappings::Dict=Dict())
+    if typeof(expr) == Float64
+        print(expr)
+    elseif typeof(expr) == Symbol
         
         var_name = get(var_mappings, expr, expr)
 

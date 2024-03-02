@@ -14,6 +14,7 @@ max_iterations = 100
 x1 = randn!(zeros(100))
 x2 = randn!(zeros(100))
 x3 = randn!(zeros(100))
+o = ones(100)
 y = (x1.^2 + x2.^2 + (x3.^2).*2)
 
 model = :((x1.^2 + x2.^2 + (x3.^2).*β))
@@ -39,35 +40,49 @@ model = :(x1 .- β)
 y = x1
 init_population()
 
-@test length(P) == 0 && length(Q) == 3
+@test length(P) == 0 && length(Q) == 4
 
 for i in 1:4
     add_to_population(dequeue!(Q))
 end
 
-@test length(P) == 3 && length(Q) == 0
+@test length(P) == 4 && length(Q) == 0
 
 add_descendants_to_queue(10000,1000000)
 
-@test length(Q) == 24
+@test length(Q) == 32
 
 x1 = rand(100)
 x2 = rand(100)
 y = 2 .* x1 .+ 4 .* x2
 model = create_descendant(operations[1], (:x1, :x2))
-print(model)
+
+@test isapprox(model.args[2].args[2], 2, atol=1e-2) && isapprox(model.args[3].args[2], 4, atol=1e-2)
+
+# compute assembly index of expresssions
+
+e1 = building_blocks[1]
+e2 = create_descendant(operations[2], (e1, building_blocks[2]))
+e3 = create_descendant(operations[2], (e2, e2))
+e4 = create_descendant(operations[2], (e2, create_descendant(operations[2], (building_blocks[2], building_blocks[3]))))
+
+@test compute_assembly_index(e1) == 0
+@test compute_assembly_index(e2) == 1
+@test compute_assembly_index(e3) == 2
+@test compute_assembly_index(e4) == 3
+
+e1 = building_blocks[1]
+e2 = create_descendant(operations[1], (e1, building_blocks[2]))
+e3 = create_descendant(operations[1], (e2, e2))
+e4 = create_descendant(operations[1], (e2, create_descendant(operations[1], (building_blocks[2], building_blocks[3]))))
+
+@test compute_assembly_index(e1) == 0
+@test compute_assembly_index(e2) == 1
+@test compute_assembly_index(e3) == 2
+@test compute_assembly_index(e4) == 3
 
 # @time P2 = generate_next_generation(P, k)
 
-x1 = u1
-x2 = u2
-x3 = u3
-y = dx1
-
-λ = var(y .- mean(y))
-k = 100000
-
-# @time assemble(λ, k)
 #=
 n1 = AssemblyNode(quote x end, Number, 0, nothing)
 n2 = AssemblyNode(:(x+y), Number, 0, n1)
@@ -91,8 +106,13 @@ get_ancestors(n2, blocks, block_types)
 x1 = randn(100)
 x2 = randn(100)
 x3 = randn(100)
+o = ones(100)
 y = x1
 
+@time final_model = assemble(λ)
+print("Final Model: ")
+print_poly(final_model)
+println("")
 #=
 model = :(1.0 .* x1)
 @test compute_MI(model) == Inf
@@ -116,7 +136,6 @@ y = (x1 .* x2)
 # It finds the correct model here.
 @time assemble(λ)
 
-
 x1 = u1
 x2 = u2
 y = dx1
@@ -132,12 +151,33 @@ y = dx1
 x1 = u1
 x2 = u2
 x3 = u3
+o = ones(length(x1))
+y = dx1
+
+λ = var(y .- mean(y)) / 4
+
+@time final_model = assemble(λ)
+print("Final Model: ")
+print_poly(final_model)
+println("")
+
+y = dx2
+
+λ = var(y) / 4
+
+@time final_model = assemble(λ)
+print("Final Model: ")
+print_poly(final_model)
+println("")
+
 y = dx3
 
 λ = var(y) / 4
 
-# @time final_model = assemble(λ)
-
+@time final_model = assemble(λ)
+print("Final Model: ")
+print_poly(final_model)
+println("")
 #=
 # Test the nonlinear mutual information implementation
 x = randn(100) .* 2.0
@@ -176,15 +216,4 @@ MI4 = compute_MI_nonlinear(m4)
 @test MI2 - MI3 <= 10e-5
 @test MI3 - MI4 <= 10e-5
 
-# compute assembly index of expresssions
-
-e1 = building_blocks[1]
-e2 = :($(building_blocks[2]) .* $(building_blocks[1]))
-e3 = :(($(building_blocks[2]) .* $(building_blocks[1])) .* ($(building_blocks[2]) .* $(building_blocks[1])))
-e4 = :(($(building_blocks[2]) .* $(building_blocks[1])) .* ($(building_blocks[2]) .* $(building_blocks[3])))
-
-@test compute_assembly_index(e1) == 0
-@test compute_assembly_index(e2) == 1
-@test compute_assembly_index(e3) == 2
-@test compute_assembly_index(e4) == 3
 =#

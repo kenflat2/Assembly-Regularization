@@ -11,9 +11,9 @@ global y::Vector{Float64}
 
 # building_blocks = Vector{Term}([quote x1 end, quote x2 end, quote x3 end, quote σ end, quote ρ end, quote β end]);
 # building_blocks = Vector{Term}([quote x1 end, quote x2 end, quote x3 end, quote σ end, quote ρ end, quote β end]);
-building_blocks = Vector{Term}([:x1, :x2, :x3]);
+building_blocks = Vector{Term}([:x1, :x2, :x3, :o]);
 # building_block_types = Vector{Type}([Vector{Float64}, Vector{Float64}, Vector{Float64}, Float64, Float64, Float64]);
-building_block_types = Vector{Type}([Vector{Float64}, Vector{Float64}, Vector{Float64}]);
+building_block_types = Vector{Type}([Vector{Float64}, Vector{Float64}, Vector{Float64}, Vector{Float64}]);
 # building_blocks = Vector{Term}([:(x1 .+ 0.0), :(x2 .+ 0.0), :(β + 0.0)]);
 # building_block_types = Vector{Type}([Vector{Float64}, Vector{Float64}, Vector{Float64}, Float64, Float64, Float64]);
 # building_block_types = Vector{Type}([Vector{Float64}, Vector{Float64}, Float64]);
@@ -23,9 +23,9 @@ operation_input_types = [[(Vector{Float64}, Vector{Float64}), (Float64, Vector{F
 
 # Computes the MSE after optimizing scalar-valued parameters
 function compute_MSE(m::Term)
-    (min_solution, min_energy) = simulated_annealing(m)
+    # (min_solution, min_energy) = simulated_annealing(m)
 
-    return min_energy
+    return compute_MSE_instantaneous(m) #min_energy
 end
 
 function compute_predictions(m::Term)
@@ -88,13 +88,12 @@ function simulated_annealing(model::Term,
     return min_solution, min_energy
 end
 
-#=
+
 # Null Hypothesis
 function compute_MI(model::Term)
     # Find the correct parameters
     return 0
 end
-=#
 
 #=
 # Alt Hypothesis 1
@@ -102,7 +101,7 @@ end
 # joint Gaussian and the MI can be computed using the correlation.
 function compute_MI(model::Term)
     # Find the correct parameters
-    simulated_annealing(model)
+    # simulated_annealing(model)
 
     y_hat = compute_predictions(model)
     correlation = cor(y_hat, y)
@@ -110,7 +109,7 @@ function compute_MI(model::Term)
     return -1 / 2 * log(1 - correlation^2)
 end
 =#
-
+#=
 # Alt Hypothesis 2
 # Mutual information computation under a flaky assumption of analogue forecasting skill
 function compute_MI(model::Term)
@@ -129,7 +128,7 @@ function compute_MI(model::Term)
     l = length(y_ord)
     return -mean((y_ord[1:l-1] .- y_ord[2:l]).^2)
 end
-
+=#
 # Function to generate a neighboring solution (you may customize this based on your problem)
 function generate_neighbor(current_solution)
     return current_solution + randn(1)[1]
