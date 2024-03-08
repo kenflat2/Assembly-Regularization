@@ -5,7 +5,7 @@ include("AssemblySpace.jl")
 
 global x1::Vector{Float64}
 global x2::Vector{Float64}
-# global x3::Vector{Float64}
+global x3::Vector{Float64}
 global y::Vector{Float64}
 # global β = 0::Number
 

@@ -1,6 +1,7 @@
 using Test
 include("Polynomial.jl")
 include("DifferentialEquations.jl")
+include("GaussianAssemblySpace.jl")
 
 # Example temperature schedule (you may customize this based on your problem)
 function example_temperature_schedule(iteration)
@@ -154,6 +155,7 @@ x3 = u3
 o = ones(length(x1))
 y = dx1
 
+#=
 λ = var(y .- mean(y)) / 4
 
 @time final_model = assemble(λ)
@@ -178,6 +180,8 @@ y = dx3
 print("Final Model: ")
 print_poly(final_model)
 println("")
+=#
+
 #=
 # Test the nonlinear mutual information implementation
 x = randn(100) .* 2.0

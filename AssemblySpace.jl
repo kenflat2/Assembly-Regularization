@@ -4,6 +4,8 @@ using Plots
 using Dates
 include("DataStructures.jl")
 
+const Term = Union{Expr, Symbol}
+
 # const Population = FixedSizePriorityQueue{AssemblyPath, Real}
 const Population = Set{Term}
 const BirthQueue = PriorityQueue{Term, Real}
